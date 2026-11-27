@@ -40,7 +40,7 @@ npx wrangler dev
 
 ## 后端怎么跑
 
-Agent 可以生成 React 页面和一个 JS 后端模块。每个后端版本在独立的 Dynamic Worker 中运行。它收到操作、参数和当前记录，返回结果与可选的新状态。主 Worker 关闭沙箱出网，校验结果，并在 SQLite 里提交更新。浏览器验收用单独的 Worker 实例调用同一版代码，每项检查从临时状态开始。
+React 页面运行在浏览器的 sandbox iframe 里。需要后端的应用通过 `AtomsBackend.call` 调用服务端，由 Worker Loader 把 Agent 生成的 JavaScript 模块加载到独立的 **Cloudflare Dynamic Worker**。沙箱关闭出网，主 Worker 把成功的更新提交到项目自己的 SQLite Durable Object。验收使用单独的 Worker 实例和临时记录。实现和实测结果见 [开发说明](docs/assessment.md#用了什么沙箱)。
 
 ## 上线后验收
 
