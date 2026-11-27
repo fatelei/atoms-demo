@@ -19,7 +19,7 @@
 
 ## 用了什么沙箱
 
-React 预览运行在浏览器的 sandbox iframe 里。它通过 `AtomsBackend.call` 把操作交给工作台，由主 Worker 按项目和版本查找后端源码，再通过 [Worker Loader 配置](../wrangler.jsonc) 加载到 **Cloudflare Dynamic Workers**。部署这项能力需要 Workers Paid。预约台用一个 JavaScript 模块就能处理新增、删除和容量校验，所以选了 Dynamic Workers。
+React 预览运行在浏览器的 sandbox iframe 里。它通过 `AtomsBackend.call` 把操作交给工作台，由主 Worker 按项目和版本查找后端源码，再通过 [Worker Loader 配置](../wrangler.jsonc) 加载到 **Cloudflare Dynamic Workers**。部署这项能力需要 Workers Paid。以 12 人工作坊预约应用为例，Agent 生成的 JavaScript 后端负责新增预约、删除预约和剩余名额校验，由 Cloudflare Dynamic Workers 隔离执行。
 
 生成的模块只拿到本次操作、参数和当前记录。沙箱关闭出网，主 Worker 负责把成功的修改写入项目自己的 SQLite Durable Object。两笔预约并发时，如果它们读到了同一份记录，后提交的请求会用最新记录重跑规则。验收用另一个 Worker 实例执行同版代码，每项检查从临时记录开始。[后端执行入口](../lib/project-backend.js) · [项目存储](../lib/project-data-store.js)
 
