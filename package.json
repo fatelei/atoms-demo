@@ -5,12 +5,21 @@
   "scripts": {
     "dev": "next dev --hostname 127.0.0.1",
     "build": "next build",
-    "start": "next start --hostname 127.0.0.1"
+    "start": "next start --hostname 127.0.0.1",
+    "build:cloudflare": "opennextjs-cloudflare build",
+    "deploy:cloudflare": "npm run build:cloudflare && wrangler deploy"
   },
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "dependencies": {
+    "acorn": "8.19.0",
     "next": "16.4.6",
     "react": "19.2.4",
     "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "@opennextjs/cloudflare": "1.20.19",
+    "wrangler": "4.148.0"
   }
 }

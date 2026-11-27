@@ -1,0 +1,20 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "atoms-demo",
+  "main": "./cloudflare-worker.js",
+  "compatibility_date": "2026-11-27",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "ratelimits": [
+    {
+      "name": "GENERATION_LIMIT",
+      "namespace_id": "2061127",
+      "simple": { "limit": 6, "period": 60 }
+    }
+  ]
+}

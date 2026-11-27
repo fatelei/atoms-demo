@@ -27,3 +27,9 @@ npm ci
 ## 笔试说明
 
 实现取舍、实际验证结果和后续优先级见 [笔试说明](docs/assessment.md)。
+
+## Cloudflare Workers
+
+[打开在线工作台](https://atoms-demo.1443343615.workers.dev/)
+
+已登录 Wrangler 后，在项目目录运行 `npm run deploy:cloudflare`。生成接口需要 Worker Secret `ATOMS_API_KEY`。它可以在 Cloudflare 控制台设置，也可以用 `npx wrangler secret put ATOMS_API_KEY` 写入。
