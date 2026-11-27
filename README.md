@@ -15,7 +15,7 @@ npm run build:cloudflare
 npx wrangler dev
 ```
 
-生成请求通过 Wrangler 的远程 Workers AI 绑定执行，会占用该账户的 Workers AI 用量。默认模型是 `@cf/qwen/qwen3.8-27b`。
+生成请求通过 Wrangler 的远程 Workers AI 绑定执行，会占用该账户的 Workers AI 用量。默认模型是 `@cf/openai/gpt-oss-120b`。
 
 打开终端给出的本地地址，输入「做一个温度换算器，输入摄氏温度后用按钮算出华氏温度」。在预览里输入 25，确认结果是 77。接着发一句「加上华氏度转摄氏度」，在新版本里把两个方向都试一遍。刷新页面会回到当前项目。也可以从「最近项目」打开其他项目。
 
