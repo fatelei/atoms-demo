@@ -1,3 +1,4 @@
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { generateApp, GenerationError, hasSource, PROMPT_LIMIT } from "../../../lib/generator.js";
 
 export const runtime = "nodejs";
@@ -55,11 +56,15 @@ export async function POST(request) {
     return errorResponse(`请输入 1–${PROMPT_LIMIT} 个字符的需求。`, 400);
   }
   if (source !== null && !hasSource(source)) return errorResponse("当前版本的源码无效。", 400);
-  const apiKey = process.env.ATOMS_API_KEY?.trim();
-  if (!apiKey) return errorResponse("服务端尚未配置 ATOMS_API_KEY，配置后可重试。", 503);
   if (generating) return errorResponse("智能体正在处理另一个请求，请稍后重试。", 429);
 
-  const config = { apiKey, model: process.env.ATOMS_MODEL?.trim() || "gpt-6.1-sol" };
+  let ai;
+  try {
+    ai = getCloudflareContext().env.AI;
+  } catch (error) {
+    console.error("Workers AI context unavailable", error.name);
+  }
+  if (!ai) return errorResponse("当前环境缺少 Workers AI 绑定。请在 Cloudflare 环境中重试。", 503);
   const priorSource = source && { html: source.html, css: source.css, js: source.js };
   const controller = new AbortController();
   const signal = AbortSignal.any([controller.signal, request.signal]);
@@ -73,7 +78,7 @@ export async function POST(request) {
       }
       try {
         const app = await generateApp({
-          prompt: prompt.trim(), source: priorSource, config, requestSignal: signal, emit,
+          prompt: prompt.trim(), source: priorSource, ai, requestSignal: signal, emit,
         });
         emit({ type: "result", app });
       } catch (error) {

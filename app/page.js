@@ -4,6 +4,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { buildApp } from "../lib/build-events.js";
 import { previewDocument } from "../lib/preview.js";
 
+// Allow submit events to reach app handlers. The preview CSP blocks form navigation.
+const previewSandbox = "allow-scripts allow-forms";
+
 const storageKey = "atoms-demo-projects-v1";
 const examples = [
   { label: "活动报名表", prompt: "做一个周末活动报名表，可以新增和删除报名，并实时统计已报名人数。" },
@@ -373,7 +376,7 @@ export default function Home() {
             {shown && activeFrame && (
               <div className="canvas" hidden={tab !== "preview"}>
                 <iframe key={activeFrame.token} ref={liveFrame} srcDoc={activeFrame.source}
-                  sandbox="allow-scripts" referrerPolicy="no-referrer" title={shown.app.title + "应用预览"} />
+                  sandbox={previewSandbox} referrerPolicy="no-referrer" title={shown.app.title + "应用预览"} />
               </div>
             )}
             {tab === "code" && shown && (
@@ -385,7 +388,7 @@ export default function Home() {
             )}
             {candidate && (
               <iframe className="candidate-frame" ref={candidateFrame} srcDoc={candidate.frame.source}
-                aria-hidden="true" tabIndex={-1} sandbox="allow-scripts" referrerPolicy="no-referrer" title="启动检查" />
+                aria-hidden="true" tabIndex={-1} sandbox={previewSandbox} referrerPolicy="no-referrer" title="启动检查" />
             )}
           </section>
         </main>
