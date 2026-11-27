@@ -8,6 +8,7 @@
   "preview_urls": false,
   "durable_objects": { "bindings": [{ "name": "APP_DATA", "class_name": "ProjectDataStore" }] },
   "migrations": [{ "tag": "app-data-v1", "new_sqlite_classes": ["ProjectDataStore"] }],
+  "worker_loaders": [{ "binding": "BACKEND_LOADER" }],
   "ai": { "binding": "AI", "remote": true },
   "assets": {
     "directory": ".open-next/assets",

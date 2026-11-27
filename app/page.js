@@ -26,7 +26,7 @@ const stageText = {
 
 function createFrame(app, steps, storage) {
   const token = crypto.randomUUID();
-  return { token, source: previewDocument(app, token, steps, storage) };
+  return { token, source: previewDocument(app, token, steps, storage), backendId: app.backendId };
 }
 
 function previewStorageKey(projectKey) {
@@ -59,6 +59,30 @@ async function runPreviewData(operation, projectKey) {
   const result = await response.json();
   if (!response.ok || result.error) throw new Error(result.error || "项目数据请求失败。");
   return result;
+}
+
+async function runSandboxData(operation, projectKey, version, testState) {
+  const { action, value: input } = operation;
+  const body = JSON.stringify({ version, action, input, testState });
+  if (new TextEncoder().encode(body).length > MAX_DATA_BYTES * 2) throw new Error("后端请求超出大小上限。");
+  const response = await fetch("/api/project-backend", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + projectKey },
+    body,
+    signal: AbortSignal.timeout(8000),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || "后端沙箱请求失败。");
+  return result;
+}
+
+function sendPreviewReply(event, token, result) {
+  event.source.postMessage({
+    ...result,
+    channel: "atoms-app-data",
+    token,
+    id: event.data.detail.id,
+  }, "*");
 }
 
 function VersionAcceptance({ results }) {
@@ -218,18 +242,17 @@ export default function Home() {
         } catch {
           setAppStorageError("无法保存预览数据，请检查浏览器存储空间。");
         }
-      } else if (data.kind === "data" && Number.isSafeInteger(data.detail?.id)) {
-        function reply(result) {
-          event.source.postMessage({
-            ...result,
-            channel: "atoms-app-data",
-            token: activeFrame.token,
-            id: data.detail.id,
-          }, "*");
+      } else if (Number.isSafeInteger(data.detail?.id)) {
+        let operation;
+        if (data.kind === "backend" && activeFrame.backendId) {
+          operation = runSandboxData(data.detail, projectKey, activeFrame.backendId);
+        } else if (data.kind === "data" && !activeFrame.backendId) {
+          operation = runPreviewData(data.detail, projectKey);
         }
-        void runPreviewData(data.detail, projectKey).then(reply, (error) => {
-          reply({ error: error.message });
-        });
+        void operation?.then(
+          ({ value }) => sendPreviewReply(event, activeFrame.token, { value }),
+          (error) => sendPreviewReply(event, activeFrame.token, { error: error.message }),
+        );
       }
     }
     window.addEventListener("message", receive);
@@ -241,6 +264,8 @@ export default function Home() {
 
     const check = candidate.acceptance && candidate.app.checks?.[candidate.acceptance.length];
     let settled = false;
+    let testState = null;
+    let backendQueue = Promise.resolve();
     function finish(error, acceptance = []) {
       if (settled) return;
       settled = true;
@@ -301,7 +326,18 @@ export default function Home() {
         data?.channel !== "atoms-preview" ||
         data.token !== candidate.frame.token
       ) return;
-      if (data.kind === "error") {
+      if (data.kind === "backend" && candidate.app.backendId && Number.isSafeInteger(data.detail?.id)) {
+        backendQueue = backendQueue.then(async () => {
+          if (settled) return;
+          try {
+            const result = await runSandboxData(data.detail, candidate.projectKey, candidate.app.backendId, testState);
+            testState = result.testState;
+            sendPreviewReply(event, candidate.frame.token, { value: result.value });
+          } catch (error) {
+            sendPreviewReply(event, candidate.frame.token, { error: error.message });
+          }
+        });
+      } else if (data.kind === "error") {
         if (check) recordCheck({ actual: data.detail });
         else finish("应用启动时出错" + (typeof data.detail === "string" && data.detail ? " · " + data.detail.slice(0, 240) : "。"));
       } else if (check && data.kind === "check" && typeof data.detail?.passed === "boolean") {
@@ -316,7 +352,7 @@ export default function Home() {
     const timeout = window.setTimeout(() => {
       if (check) recordCheck({ actual: "检查超时" });
       else finish("预览未能启动，可以重试这条需求。");
-    }, check ? 3500 : 6000);
+    }, check ? (candidate.app.backendId ? 18000 : 3500) : 6000);
     return () => {
       window.clearTimeout(timeout);
       window.removeEventListener("message", receive);
@@ -343,7 +379,7 @@ export default function Home() {
     setJob({ turnId: turn.id, stage: "planning", steps: [] });
     let steps = [];
     try {
-      const app = await buildApp({ prompt: request, source: base?.app ?? null }, (event) => {
+      const app = await buildApp({ prompt: request, source: base?.app ?? null, projectKey: target.dataKey }, (event) => {
         if (event.type === "plan") steps = event.steps;
         setJob((state) => ({
           ...state,
@@ -352,7 +388,7 @@ export default function Home() {
         }));
       });
       setJob({ turnId: turn.id, stage: "previewing", steps });
-      setCandidate({ projectId: target.id, turnId: turn.id, app, steps, frame: createFrame(app) });
+      setCandidate({ projectId: target.id, projectKey: target.dataKey, turnId: turn.id, app, steps, frame: createFrame(app) });
     } catch (error) {
       const message = error.name === "TimeoutError" ? "智能体响应超时，可以重试这条需求。" : error.message;
       setProjects((all) => all.map((item) => item.id !== target.id ? item : {
@@ -528,7 +564,8 @@ export default function Home() {
             )}
             {tab === "code" && shown && (
               <div className="source">
-                {[["HTML", shown.app.html], ["CSS", shown.app.css], ["JavaScript", shown.app.js]].map(([label, code]) => (
+                {[["HTML", shown.app.html], ["CSS", shown.app.css], ["前端 JavaScript", shown.app.js],
+                  ...(shown.app.backend ? [["后端 JavaScript", shown.app.backend]] : [])].map(([label, code]) => (
                   <section key={label}><h2>{label}</h2><pre><code>{code}</code></pre></section>
                 ))}
               </div>

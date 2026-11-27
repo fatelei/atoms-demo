@@ -155,6 +155,7 @@ test("版本验收卡重跑旧检查并保存实际结果", async ({ page }) => 
 
 
 test("React 任务数据跨刷新保留且验收数据和项目相互隔离", async ({ page }) => {
+  test.setTimeout(90_000);
   const app = {
     title: "任务板",
     summary: "新增和删除任务",
@@ -217,7 +218,7 @@ test("React 任务数据跨刷新保留且验收数据和项目相互隔离", as
     await page.getByRole("button", { name: "生成应用", exact: true }).click();
     await waitForVersion(page, 1);
     await expect(page.getByText("版本验收 · 1/1 项通过")).toBeVisible();
-    await expect(count).toHaveText("0");
+    await expect(count).toHaveText("0", { timeout: 12_000 });
   }
 
   await openWorkbench(page, editor);
@@ -245,8 +246,68 @@ test("React 任务数据跨刷新保留且验收数据和项目相互隔离", as
   await page.goto(firstProject);
   await waitForVersion(page, 2);
   await preview.getByRole("button", { name: "删除", exact: true }).click();
-  await expect(count).toHaveText("0");
+  await expect(count).toHaveText("0", { timeout: 12_000 });
   await page.reload();
   await waitForVersion(page, 2);
-  await expect(count).toHaveText("0");
+  await expect(count).toHaveText("0", { timeout: 12_000 });
+});
+
+test("预约后端在沙箱内执行容量规则和新版规则", async ({ page, request }) => {
+  test.setTimeout(430_000);
+  const editor = page.locator("textarea");
+  const preview = page.frameLocator(".canvas iframe");
+  const name = "林青";
+  await openWorkbench(page, editor);
+  await editor.fill(
+    "做中文工作坊预约台，12 个名额。必须生成真正的后端，前端通过 AtomsBackend 调用。"
+    + "后端 action 固定为 list、add 和 remove。add 的 input 是 {name,count}，在服务端校验正整数和剩余名额，拒绝时提示「剩余名额不足」。"
+    + "前端姓名输入框用 id=name，人数输入框用 id=count，新增按钮用 id=add，剩余名额用 id=remaining 并显示「剩余名额：X」。"
+    + "每条预约显示对应姓名和删除按钮。刷新恢复原记录。生成一项新增预约的验收检查。",
+  );
+  await page.getByRole("button", { name: "生成应用", exact: true }).click();
+  await waitForVersion(page, 1);
+  await expect(page.getByText(/版本验收 · [1-9]/)).toBeVisible();
+  await expect(preview.locator("#remaining")).toContainText("12");
+  await preview.locator("#name").fill(name);
+  await preview.locator("#count").fill("3");
+  await preview.locator("#add").click();
+  await expect(preview.locator("#remaining")).toContainText("9");
+  await expect(preview.getByText(name)).toBeVisible();
+
+  async function backend(action, input) {
+    const { key, version } = await page.evaluate(() => {
+      const projects = JSON.parse(localStorage.getItem("atoms-demo-projects-v1"));
+      const project = projects.find((entry) => entry.id === location.hash.slice(1));
+      return { key: project.dataKey, version: project.versions.at(-1).app.backendId };
+    });
+    expect(version).toBeTruthy();
+    return request.post("/api/project-backend", {
+      headers: { Authorization: "Bearer " + key },
+      data: { version, action, input },
+    });
+  }
+
+  const overbook = await backend("add", { name: "周野", count: 10 });
+  expect(overbook.status()).toBe(422);
+  expect((await overbook.json()).error).toContain("剩余名额不足");
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await waitForVersion(page, 1);
+  await expect(preview.locator("#remaining")).toContainText("9");
+  await expect(preview.getByText(name)).toBeVisible();
+  await expect(preview.getByText("周野")).toBeHidden();
+
+  await editor.fill("修改服务端预约规则，每笔最多预约 4 人。超过 4 人返回「单笔最多预约 4 人」。保留总容量、原有记录格式、操作名、控件 ID 和原有预约。");
+  await page.getByRole("button", { name: "发送修改", exact: true }).click();
+  await waitForVersion(page, 2);
+  await expect(preview.locator("#remaining")).toContainText("9");
+  await expect(preview.getByText(name)).toBeVisible();
+  const overLimit = await backend("add", { name: "周野", count: 5 });
+  expect(overLimit.status()).toBe(422);
+  expect((await overLimit.json()).error).toMatch(/最多预约\s*4\s*人/);
+  await preview.getByRole("button", { name: "删除", exact: true }).click();
+  await expect(preview.locator("#remaining")).toContainText("12");
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await waitForVersion(page, 2);
+  await expect(preview.locator("#remaining")).toContainText("12");
+  await expect(preview.getByText(name)).toBeHidden();
 });

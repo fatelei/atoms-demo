@@ -26,7 +26,7 @@ npx wrangler dev
 - `app/api/generate/route.js` 接收需求，把构建进度和结果发回工作台。
 - `lib/generator.js` 管理单 Agent 的构建过程。先出计划，再写代码。返回格式或 JavaScript 语法错误时，最多请求模型修复一次。
 - `lib/preview.js` 在沙箱 iframe 内加载 React 和生成的组件。已有的 HTML／JavaScript 版本也可以继续预览。候选版本通过启动检查后才会成为当前版本。
-- `app/page.js` 管理项目对话、预览和历史版本。项目及源码版本保存在浏览器的 `localStorage` 里。新生成的任务和预约应用通过 `AtomsData` 把业务记录写入按项目隔离的 Cloudflare Durable Object。筛选词等临时 UI 状态仍保存在组件内。验收用独立的临时数据。
+- `app/page.js` 管理项目对话、预览和历史版本。项目及源码版本保存在浏览器的 `localStorage` 里。有后端的应用通过 `AtomsBackend` 调用生成的 API，由 Dynamic Worker 执行业务规则。项目记录写入 SQLite Durable Object。已有 `AtomsData` 应用仍能读写原数据。
 
 ## 笔试说明
 
@@ -36,7 +36,11 @@ npx wrangler dev
 
 [打开在线工作台](https://atoms-demo.1443343615.workers.dev/)
 
-已登录 Wrangler 后，在项目目录运行 `npm run deploy:cloudflare`。部署配置包含 Workers AI 绑定和项目数据用的 SQLite Durable Object。生成接口无需额外的 API Key。
+已登录 Wrangler 后，在项目目录运行 `npm run deploy:cloudflare`。部署配置包含 Workers AI、SQLite Durable Object 和 Worker Loader。Worker Loader 需要 **Workers Paid**。生成接口无需额外的 API Key。
+
+## 后端怎么跑
+
+Agent 可以生成 React 页面和一个 JS 后端模块。每个后端版本在独立的 Dynamic Worker 中运行。它收到操作、参数和当前记录，返回结果与可选的新状态。主 Worker 关闭沙箱出网，校验结果，并在 SQLite 里提交更新。浏览器验收用各自的临时状态，调用同一段沙箱代码。
 
 ## 上线后验收
 
@@ -49,3 +53,5 @@ npm run test:e2e
 默认测试上面的线上地址。要测试别的部署，运行 `E2E_BASE_URL=https://你的部署地址 npm run test:e2e`。真实生成用例会占用目标部署的 Workers AI 额度。只想用固定响应检查验收卡，可以运行 `npm run test:e2e -- --grep 版本验收卡`。
 
 只检查 React 任务数据的保存、刷新恢复和项目隔离，可以运行 `npm run test:e2e -- --grep 'React 任务数据'`。这条用例固定生成结果，数据读写走实际部署。
+
+`npm run test:e2e -- --grep 预约后端` 会生成 12 人预约台，直接向服务器构造超额请求，再修改单笔上限并检查旧记录。该用例使用真实模型和后端沙箱。
