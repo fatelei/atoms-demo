@@ -2,6 +2,8 @@
 
 输入一句需求，生成一页能操作的网页。可以在同一个项目里接着说要改什么，也可以打开或恢复之前的版本。
 
+新版本的验收卡会显示浏览器实际跑出的检查结果。修改时会复测上一版的检查。展开失败项，可以看到出错步骤、预期值和实际结果。
+
 ## 在本机跑起来
 
 准备 Node.js 22 或更高版本，并用 Wrangler 登录自己的 Cloudflare 账户。在项目目录执行：
@@ -44,4 +46,4 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-默认测试上面的线上地址。要测试别的部署，运行 `E2E_BASE_URL=https://你的部署地址 npm run test:e2e`。测试会真实生成和修改一次计算器，再检查刷新恢复，会占用目标部署的 Workers AI 额度。
+默认测试上面的线上地址。要测试别的部署，运行 `E2E_BASE_URL=https://你的部署地址 npm run test:e2e`。真实生成用例会占用目标部署的 Workers AI 额度。只想用固定响应检查验收卡，可以运行 `npm run test:e2e -- --grep 版本验收卡`。

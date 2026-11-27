@@ -135,6 +135,16 @@ button:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent);
 .build-plan li + li { margin-top: 5px; }
 .version, .failure { margin-top: 12px; }
 .version button { margin-top: 10px; }
+.acceptance, .acceptance-empty { margin-top: 12px; font-size: .875rem; }
+.acceptance { padding: 8px 0; border-block: 1px solid var(--line); }
+.acceptance summary { cursor: pointer; }
+.acceptance ul { list-style: none; padding: 0; margin: 9px 0 0; }
+.acceptance li + li { margin-top: 8px; }
+.acceptance li p { margin: 4px 0 0; color: var(--muted); }
+.acceptance-pass, .acceptance-fail { margin-right: 8px; font-weight: 700; }
+.acceptance-pass { color: var(--accent); }
+.acceptance-fail { color: #ffc4ab; }
+.version .acceptance-empty { color: var(--muted); }
 .composer { width: 100%; border-radius: 12px; box-shadow: none; padding: 8px; }
 .composer textarea { min-height: 68px; max-height: 160px; }
 .composer .primary-button { flex-shrink: 0; }

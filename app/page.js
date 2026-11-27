@@ -20,11 +20,42 @@ const stageText = {
   checking: "正在检查源码",
   repairing: "正在修正源码",
   previewing: "正在启动应用预览",
+  acceptance: "正在试跑应用交互",
 };
 
-function createFrame(app) {
+function createFrame(app, steps) {
   const token = crypto.randomUUID();
-  return { token, source: previewDocument(app, token) };
+  return { token, source: previewDocument(app, token, steps) };
+}
+
+function VersionAcceptance({ results }) {
+  if (!Array.isArray(results)) return null;
+  if (results.length === 0) return <p className="acceptance-empty">本版暂无可运行的交互检查。</p>;
+
+  const passed = results.filter((result) => result.passed).length;
+  return (
+    <details className="acceptance">
+      <summary>版本验收 · {passed}/{results.length} 项通过</summary>
+      <ul>
+        {results.map((result, index) => (
+          <li key={index}>
+            <span className={result.passed ? "acceptance-pass" : "acceptance-fail"}>
+              {result.passed ? "通过" : "未通过"}
+            </span>
+            <span>{result.scope === "regression" ? "回归 · " : ""}{result.title}</span>
+            {!result.passed && (
+              <p>
+                {result.step ? `第 ${result.step} 步 · ` : ""}
+                {result.expected !== undefined ? `预期「${result.expected}」 · ` : ""}
+                {result.expected !== undefined ? "实际 " : ""}
+                {result.actual || "检查未返回结果"}
+              </p>
+            )}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
 }
 
 function PromptForm({ value, onChange, onSubmit, disabled, label, placeholder, focusRef, primary }) {
@@ -122,14 +153,15 @@ export default function Home() {
   useEffect(() => {
     if (!candidate) return;
 
+    const check = candidate.acceptance && candidate.app.checks?.[candidate.acceptance.length];
     let settled = false;
-    function finish(error) {
+    function finish(error, acceptance = []) {
       if (settled) return;
       settled = true;
       const { projectId, turnId, app, steps } = candidate;
       setProjects((all) => all.map((item) => {
         if (item.id !== projectId) return item;
-        const version = { id: turnId, number: item.versions.length + 1, app };
+        const version = { id: turnId, number: item.versions.length + 1, app, acceptance };
         return {
           ...item,
           versions: error ? item.versions : [...item.versions, version],
@@ -147,6 +179,34 @@ export default function Home() {
       setCandidate(null);
     }
 
+    function nextCheck(acceptance) {
+      const next = candidate.app.checks?.[acceptance.length];
+      if (!next) {
+        finish("", acceptance);
+        return;
+      }
+      settled = true;
+      setCandidate({ ...candidate, acceptance, frame: createFrame(candidate.app, next.steps) });
+    }
+
+    function recordCheck(detail) {
+      if (!check || settled) return;
+      const actual = typeof detail.actual === "string" ? detail.actual.slice(0, 240) : undefined;
+      const step = Number.isInteger(detail.step) && detail.step > 0 && detail.step <= check.steps.length
+        ? detail.step : undefined;
+      nextCheck([
+        ...candidate.acceptance,
+        {
+          title: check.title,
+          scope: check.scope,
+          passed: detail.passed === true,
+          actual,
+          step,
+          expected: typeof detail.expected === "string" ? detail.expected.slice(0, 180) : undefined,
+        },
+      ]);
+    }
+
     function receive(event) {
       const data = event.data;
       if (
@@ -156,14 +216,21 @@ export default function Home() {
         data.token !== candidate.frame.token
       ) return;
       if (data.kind === "error") {
-        finish("应用启动时出错" + (typeof data.detail === "string" && data.detail ? " · " + data.detail.slice(0, 240) : "。"));
-      } else if (data.kind === "ready") {
-        finish("");
+        if (check) recordCheck({ actual: data.detail });
+        else finish("应用启动时出错" + (typeof data.detail === "string" && data.detail ? " · " + data.detail.slice(0, 240) : "。"));
+      } else if (check && data.kind === "check" && typeof data.detail?.passed === "boolean") {
+        recordCheck(data.detail);
+      } else if (!check && data.kind === "ready" && !settled) {
+        if (candidate.app.checks?.length) setJob((job) => ({ ...job, stage: "acceptance" }));
+        nextCheck([]);
       }
     }
 
     window.addEventListener("message", receive);
-    const timeout = window.setTimeout(() => finish("预览未能启动，可以重试这条需求。"), 6000);
+    const timeout = window.setTimeout(() => {
+      if (check) recordCheck({ actual: "检查超时" });
+      else finish("预览未能启动，可以重试这条需求。");
+    }, check ? 3500 : 6000);
     return () => {
       window.clearTimeout(timeout);
       window.removeEventListener("message", receive);
@@ -323,6 +390,7 @@ export default function Home() {
                       <article className="version">
                         <h2>v{version.number} · {version.app.title}</h2>
                         <p>{version.app.summary}</p>
+                        <VersionAcceptance results={version.acceptance} />
                         <button className="quiet-button" type="button" onClick={() => { setShownId(version.id); setTab("preview"); }}>
                           预览 v{version.number}
                         </button>
@@ -387,8 +455,8 @@ export default function Home() {
               </div>
             )}
             {candidate && (
-              <iframe className="candidate-frame" ref={candidateFrame} srcDoc={candidate.frame.source}
-                aria-hidden="true" tabIndex={-1} sandbox={previewSandbox} referrerPolicy="no-referrer" title="启动检查" />
+              <iframe key={candidate.frame.token} className="candidate-frame" ref={candidateFrame} srcDoc={candidate.frame.source}
+                aria-hidden="true" tabIndex={-1} sandbox={previewSandbox} referrerPolicy="no-referrer" title={candidate.acceptance ? "交互检查" : "启动检查"} />
             )}
           </section>
         </main>

@@ -65,7 +65,6 @@ export async function POST(request) {
     console.error("Workers AI context unavailable", error.name);
   }
   if (!ai) return errorResponse("当前环境缺少 Workers AI 绑定。请在 Cloudflare 环境中重试。", 503);
-  const priorSource = source && { html: source.html, css: source.css, js: source.js };
   const controller = new AbortController();
   const signal = AbortSignal.any([controller.signal, request.signal]);
   const encoder = new TextEncoder();
@@ -78,7 +77,7 @@ export async function POST(request) {
       }
       try {
         const app = await generateApp({
-          prompt: prompt.trim(), source: priorSource, ai, requestSignal: signal, emit,
+          prompt: prompt.trim(), source, ai, requestSignal: signal, emit,
         });
         emit({ type: "result", app });
       } catch (error) {
