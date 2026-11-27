@@ -6,12 +6,15 @@
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "workers_dev": true,
   "preview_urls": false,
+  "durable_objects": { "bindings": [{ "name": "APP_DATA", "class_name": "ProjectDataStore" }] },
+  "migrations": [{ "tag": "app-data-v1", "new_sqlite_classes": ["ProjectDataStore"] }],
   "ai": { "binding": "AI", "remote": true },
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
   },
   "ratelimits": [
+    { "name": "APP_DATA_LIMIT", "namespace_id": "2061128", "simple": { "limit": 120, "period": 60 } },
     {
       "name": "GENERATION_LIMIT",
       "namespace_id": "2061127",

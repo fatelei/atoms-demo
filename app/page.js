@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { DATA_KEY, MAX_DATA_BYTES } from "../lib/app-data.js";
 import { buildApp } from "../lib/build-events.js";
 import { previewDocument } from "../lib/preview.js";
 
@@ -23,9 +24,41 @@ const stageText = {
   acceptance: "正在试跑应用交互",
 };
 
-function createFrame(app, steps) {
+function createFrame(app, steps, storage) {
   const token = crypto.randomUUID();
-  return { token, source: previewDocument(app, token, steps) };
+  return { token, source: previewDocument(app, token, steps, storage) };
+}
+
+function previewStorageKey(projectKey) {
+  return "atoms-demo-data-" + projectKey;
+}
+
+function readPreviewStorage(projectKey) {
+  try {
+    const stored = JSON.parse(localStorage.getItem(previewStorageKey(projectKey)) ?? "{}");
+    if (stored && typeof stored === "object" && !Array.isArray(stored)) return stored;
+  } catch {
+    // An unusable browser snapshot should not stop the preview from opening.
+  }
+  return {};
+}
+
+async function runPreviewData(operation, projectKey) {
+  const { action, key, value } = operation;
+  if (typeof key !== "string" || !DATA_KEY.test(key) || !["get", "set", "remove"].includes(action)) {
+    throw new Error("项目数据操作无效。");
+  }
+  const body = JSON.stringify({ action, key, value });
+  if (new TextEncoder().encode(body).length > MAX_DATA_BYTES) throw new Error("项目数据超出大小上限。");
+  const response = await fetch("/api/app-data", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + projectKey },
+    body,
+    signal: AbortSignal.timeout(8000),
+  });
+  const result = await response.json();
+  if (!response.ok || result.error) throw new Error(result.error || "项目数据请求失败。");
+  return result;
 }
 
 function VersionAcceptance({ results }) {
@@ -97,6 +130,7 @@ export default function Home() {
   const [shownId, setShownId] = useState(null);
   const [reload, setReload] = useState(0);
   const [previewError, setPreviewError] = useState("");
+  const [appStorageError, setAppStorageError] = useState("");
   const [storageError, setStorageError] = useState(false);
 
   const pending = useRef(false);
@@ -108,12 +142,44 @@ export default function Home() {
   const current = project?.versions.at(-1);
   const shown = project?.versions.find((item) => item.id === shownId) ?? current;
   const isHistorical = Boolean(shown && shown.id !== current?.id);
-  const activeFrame = useMemo(() => shown ? createFrame(shown.app) : null, [shown, reload]);
+  const projectKey = project?.dataKey;
+  const activeFrame = useMemo(() =>
+    shown && projectKey ? createFrame(shown.app, null, readPreviewStorage(projectKey)) : null,
+  [shown, projectKey, reload]);
+
+  const selectProject = useCallback((id) => {
+    if (pending.current) return;
+    const url = new URL(window.location.href);
+    url.hash = id ?? "";
+    window.history.replaceState(window.history.state, "", url);
+    setActiveId(id);
+    setShownId(null);
+    setHistory(false);
+    setTab("preview");
+    setPrompt("");
+  }, []);
+
+  useEffect(() => {
+    function followProjectLink() {
+      selectProject(window.location.hash.slice(1) || null);
+    }
+    window.addEventListener("hashchange", followProjectLink);
+    return () => window.removeEventListener("hashchange", followProjectLink);
+  }, [selectProject]);
 
   useEffect(() => {
     try {
       const stored = JSON.parse(localStorage.getItem(storageKey) ?? "[]");
-      setProjects(Array.isArray(stored) ? stored : []);
+      const restored = Array.isArray(stored) ? stored.map((item) => ({
+        ...item,
+        dataKey: item.dataKey ?? crypto.randomUUID(),
+        turns: item.turns.map((turn) => turn.complete || turn.error
+          ? turn
+          : { ...turn, error: "页面已刷新，本次生成已中断。可以重试这条需求。" }),
+      })) : [];
+      const id = window.location.hash.slice(1);
+      setProjects(restored);
+      if (restored.some((item) => item.id === id)) setActiveId(id);
     } catch {
       setProjects([]);
       setStorageError(true);
@@ -134,21 +200,41 @@ export default function Home() {
     logEnd.current?.scrollIntoView({ block: "nearest" });
   }, [project?.turns.length, job?.stage, job?.steps, current?.id]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setPreviewError("");
+    setAppStorageError("");
     function receive(event) {
-      if (
-        event.origin === "null" &&
-        event.source === liveFrame.current?.contentWindow &&
-        event.data?.channel === "atoms-preview" &&
-        event.data.token === activeFrame?.token &&
-        event.data.kind === "error" &&
-        typeof event.data.detail === "string"
-      ) setPreviewError(event.data.detail.slice(0, 240));
+      const data = event.data;
+      if (!activeFrame || event.origin !== "null" || event.source !== liveFrame.current?.contentWindow ||
+          data?.channel !== "atoms-preview" || data.token !== activeFrame.token) return;
+      if (data.kind === "error" && typeof data.detail === "string") {
+        setPreviewError(data.detail.slice(0, 240));
+      } else if (data.kind === "storage") {
+        try {
+          const content = JSON.stringify(data.detail);
+          if (new TextEncoder().encode(content).length > MAX_DATA_BYTES) throw new Error("Preview storage full");
+          localStorage.setItem(previewStorageKey(projectKey), content);
+          setAppStorageError("");
+        } catch {
+          setAppStorageError("无法保存预览数据，请检查浏览器存储空间。");
+        }
+      } else if (data.kind === "data" && Number.isSafeInteger(data.detail?.id)) {
+        function reply(result) {
+          event.source.postMessage({
+            ...result,
+            channel: "atoms-app-data",
+            token: activeFrame.token,
+            id: data.detail.id,
+          }, "*");
+        }
+        void runPreviewData(data.detail, projectKey).then(reply, (error) => {
+          reply({ error: error.message });
+        });
+      }
     }
     window.addEventListener("message", receive);
     return () => window.removeEventListener("message", receive);
-  }, [activeFrame]);
+  }, [activeFrame, projectKey]);
 
   useEffect(() => {
     if (!candidate) return;
@@ -237,14 +323,6 @@ export default function Home() {
     };
   }, [candidate]);
 
-  function selectProject(id) {
-    if (pending.current) return;
-    setActiveId(id);
-    setShownId(null);
-    setHistory(false);
-    setTab("preview");
-    setPrompt("");
-  }
 
   async function runBuild(target, request, retryTurn) {
     if (pending.current) return;
@@ -290,7 +368,7 @@ export default function Home() {
     if (pending.current || projects === null) return;
     let target = project;
     if (!target) {
-      target = { id: crypto.randomUUID(), turns: [], versions: [] };
+      target = { id: crypto.randomUUID(), dataKey: crypto.randomUUID(), turns: [], versions: [] };
       setProjects((all) => [target, ...all]);
       selectProject(target.id);
     } else {
@@ -435,6 +513,7 @@ export default function Home() {
               </section>
             )}
             {previewError && tab === "preview" && <p className="preview-error" role="alert">预览异常 · {previewError}</p>}
+            {appStorageError && tab === "preview" && <p className="preview-error" role="alert">{appStorageError}</p>}
             {!shown && (
               <div className="empty-preview">
                 <strong>{job ? "正在构建你的应用" : "等待应用版本"}</strong>

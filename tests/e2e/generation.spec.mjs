@@ -72,7 +72,6 @@ test("生成、修改排练室计算器并在刷新后恢复项目", async ({ pa
 
   await test.step("刷新后恢复对话和 v2", async () => {
     await page.reload();
-    await page.locator(".recent button").click();
     await waitForVersion(page, 2);
     await expect(page.getByText(revisionRequest, { exact: true })).toBeVisible();
     await expect(preview.getByRole("checkbox")).toBeVisible();
@@ -150,7 +149,104 @@ test("版本验收卡重跑旧检查并保存实际结果", async ({ page }) => 
   await expect(preview.locator("#record")).toBeVisible();
 
   await page.reload();
-  await page.locator(".recent button").click();
   await waitForVersion(page, 2);
   await expect(headline).toBeVisible();
+});
+
+
+test("React 任务数据跨刷新保留且验收数据和项目相互隔离", async ({ page }) => {
+  const app = {
+    title: "任务板",
+    summary: "新增和删除任务",
+    framework: "react",
+    html: '<div id="root"></div>',
+    css: "body { padding: 12px; }",
+    js: `
+      const h = React.createElement;
+      function App() {
+        const [tasks, setTasks] = React.useState(null);
+        const [draft, setDraft] = React.useState("");
+        const [error, setError] = React.useState("");
+        const [saving, setSaving] = React.useState(false);
+        React.useEffect(() => {
+          AtomsData.get("tasks").then((value) => setTasks(value ?? []), (error) => setError(error.message));
+        }, []);
+        async function update(next) {
+          setSaving(true);
+          try {
+            await AtomsData.set("tasks", next);
+            setTasks(next);
+            setDraft("");
+          } catch (error) {
+            setError(error.message);
+          } finally {
+            setSaving(false);
+          }
+        }
+        return h("main", null,
+          h("input", { id: "task", "aria-label": "任务", value: draft, onChange: (event) => setDraft(event.target.value) }),
+          h("button", { id: "add", disabled: !tasks || !draft || saving, onClick: () => update([...tasks, draft]) }, "新增"),
+          h("p", { id: "count" }, tasks ? String(tasks.length) : "加载中"),
+          error && h("p", { role: "alert" }, error),
+          h("ul", null, (tasks ?? []).map((task, index) => h("li", { key: index },
+            h("span", { className: "task-title" }, task),
+            h("button", { disabled: saving, onClick: () => update(tasks.filter((_, i) => i !== index)) }, "删除")))));
+      }
+      ReactDOM.createRoot(document.getElementById("root")).render(h(App));
+    `,
+    checks: [{
+      scope: "current",
+      title: "新增任务后显示记录",
+      steps: [
+        { action: "fill", selector: "#task", value: "验收任务" },
+        { action: "click", selector: "#add" },
+        { action: "assertText", selector: ".task-title", value: "验收任务" },
+      ],
+    }],
+  };
+  await page.route("**/api/generate", (route) => route.fulfill({
+    contentType: "application/x-ndjson",
+    body: JSON.stringify({ type: "result", app }) + "\n",
+  }));
+
+  const editor = page.locator("textarea");
+  const preview = page.frameLocator(".canvas iframe");
+  const count = preview.locator("#count");
+  async function createProject() {
+    await editor.fill("创建一个可保存任务的任务板");
+    await page.getByRole("button", { name: "生成应用", exact: true }).click();
+    await waitForVersion(page, 1);
+    await expect(page.getByText("版本验收 · 1/1 项通过")).toBeVisible();
+    await expect(count).toHaveText("0");
+  }
+
+  await openWorkbench(page, editor);
+  await createProject();
+  const firstProject = page.url();
+  await preview.getByRole("textbox", { name: "任务", exact: true }).fill("刷新后保留");
+  await preview.getByRole("button", { name: "新增", exact: true }).click();
+  await expect(preview.getByText("刷新后保留", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "重新加载", exact: true }).click();
+  await expect(preview.getByText("刷新后保留", { exact: true })).toBeVisible();
+  await page.reload();
+  await waitForVersion(page, 1);
+  await expect(preview.getByText("刷新后保留", { exact: true })).toBeVisible();
+
+  await editor.fill("调整任务列表样式，保留原有任务");
+  await page.getByRole("button", { name: "发送修改", exact: true }).click();
+  await waitForVersion(page, 2);
+  await expect(preview.getByText("刷新后保留", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Atoms Demo" }).click();
+  await createProject();
+  await expect(preview.getByText("刷新后保留", { exact: true })).toBeHidden();
+
+  await page.goto(firstProject);
+  await waitForVersion(page, 2);
+  await preview.getByRole("button", { name: "删除", exact: true }).click();
+  await expect(count).toHaveText("0");
+  await page.reload();
+  await waitForVersion(page, 2);
+  await expect(count).toHaveText("0");
 });

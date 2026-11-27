@@ -8,7 +8,10 @@
     "start": "next start --hostname 127.0.0.1",
     "build:cloudflare": "opennextjs-cloudflare build",
     "deploy:cloudflare": "npm run build:cloudflare && wrangler deploy",
-    "test:e2e": "playwright test tests/e2e --workers=1 --reporter=line"
+    "test:e2e": "playwright test tests/e2e --workers=1 --reporter=line",
+    "build:preview-runtime": "node scripts/build-preview-runtime.mjs",
+    "predev": "npm run build:preview-runtime",
+    "prebuild": "npm run build:preview-runtime"
   },
   "engines": {
     "node": ">=22"
@@ -22,6 +25,7 @@
   "devDependencies": {
     "@opennextjs/cloudflare": "1.20.19",
     "@playwright/test": "1.65.1",
+    "esbuild": "0.28.2",
     "wrangler": "4.148.0"
   }
 }
