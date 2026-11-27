@@ -35,3 +35,13 @@ npx wrangler dev
 [打开在线工作台](https://atoms-demo.1443343615.workers.dev/)
 
 已登录 Wrangler 后，在项目目录运行 `npm run deploy:cloudflare`。部署配置已经声明 Workers AI 绑定，生成接口无需额外的 API Key。
+
+## 上线后验收
+
+```sh
+npm ci
+npx playwright install chromium
+npm run test:e2e
+```
+
+默认测试上面的线上地址。要测试别的部署，运行 `E2E_BASE_URL=https://你的部署地址 npm run test:e2e`。测试会真实生成和修改一次计算器，再检查刷新恢复，会占用目标部署的 Workers AI 额度。
